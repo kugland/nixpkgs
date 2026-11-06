@@ -10,7 +10,7 @@
   libpng,
   libtirpc,
   liblxi,
-  libsigcxx,
+  libsigcxx_2_0,
   zlib,
   wrapGAppsHook3,
   makeBinaryWrapper,
@@ -65,7 +65,7 @@ stdenv.mkDerivation {
     hidapi
     liblxi
     libpng
-    libsigcxx
+    libsigcxx_2_0
     vulkan-headers
     vulkan-loader
     yaml-cpp
@@ -112,6 +112,7 @@ stdenv.mkDerivation {
     homepage = "https://www.ngscopeclient.org/";
     license = lib.licenses.bsd3;
     mainProgram = "ngscopeclient";
+    mainDarwinApp = "ngscopeclient.app";
     maintainers = with lib.maintainers; [
       bgamari
       carlossless

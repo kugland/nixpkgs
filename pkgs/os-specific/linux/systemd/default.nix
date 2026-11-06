@@ -5,7 +5,6 @@
   pkgsCross,
   testers,
   fetchFromGitHub,
-  fetchpatch,
   buildPackages,
   makeBinaryWrapper,
   ninja,
@@ -80,6 +79,10 @@
   # closure of GHC via emscripten and jdk.
   bpftools,
   libbpf,
+
+  # vmlinux.h (kernel BTF) for the systemd BPF programs.
+  # This is used for the linuxPackages*.systemd packages.
+  vmlinux-btf ? null,
 
   # Needed to produce a ukify that works for cross compiling UKIs.
   targetPackages,
@@ -159,6 +162,10 @@
   # attempt to load a service which does not exist, resulting in errors.
   withUtmp ? !stdenv.hostPlatform.isMusl,
   withVmspawn ? true,
+  # The BPF programs backing nsresourced/mountfsd need a vmlinux.h, which is
+  # only available when a kernel BTF is provided (see vmlinux-btf above).
+  withNsresourced ? withLibBPF && vmlinux-btf != null,
+  withMountfsd ? withLibBPF && vmlinux-btf != null,
   # kernel-install shouldn't usually be used on NixOS, but can be useful, e.g. for
   # building disk images for non-NixOS systems. To save users from trying to use it
   # on their live NixOS system, we disable it by default.
@@ -187,6 +194,8 @@ assert withHomed -> withPam;
 assert withHomed -> withOpenSSL;
 assert withFido2 -> withOpenSSL;
 assert withSysupdate -> withOpenSSL;
+assert withNsresourced -> withLibBPF;
+assert withMountfsd -> withLibBPF;
 assert withImportd -> (withGcrypt || withOpenSSL);
 assert withUkify -> (withEfi && withBootloader);
 assert withRepart -> withCryptsetup;
@@ -204,13 +213,13 @@ let
 in
 stdenv.mkDerivation (finalAttrs: {
   inherit pname;
-  version = "261.2";
+  version = "261.3";
 
   src = fetchFromGitHub {
     owner = "systemd";
     repo = "systemd";
     tag = "v${finalAttrs.version}";
-    hash = "sha256-w0Fxx+zYBs806whyaKBytGwSgn89ARdukAm6Hp+XlQQ=";
+    hash = "sha256-W3E6QUxr+x5jt4KJlHWbP4unyQCI7yA5oymgz6la1ng=";
   };
 
   # PATCH POLICY
@@ -240,13 +249,6 @@ stdenv.mkDerivation (finalAttrs: {
     ./0003-add-rootprefix-to-lookup-dir-paths.patch
     ./0004-path-util.h-add-placeholder-for-DEFAULT_PATH_NORMAL.patch
     ./0005-core-don-t-taint-on-unmerged-usr.patch
-    # Remove this with v262
-    # Fixes an issue for switch-to-configuration
-    (fetchpatch {
-      name = "postpone-d-bus-queue-dispatch.patch";
-      url = "https://github.com/systemd/systemd/commit/266b3e50218e2b27cd67d2371c165bf53ad3bf00.patch";
-      hash = "sha256-dEEzZUqicnmgDuXVBV1y0BxzgKbb6Q47Dmxj+O71bFE=";
-    })
   ]
   ++ lib.optionals (stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isGnu) [
     ./0006-timesyncd-disable-NSCD-when-DNSSEC-validation-is-dis.patch
@@ -567,6 +569,16 @@ stdenv.mkDerivation (finalAttrs: {
     (lib.mesonBool "smack" true)
     (lib.mesonBool "b_pie" true)
   ]
+  ++ lib.optionals withNsresourced [
+    (lib.mesonBool "nsresourced" withNsresourced)
+  ]
+  ++ lib.optionals withMountfsd [
+    (lib.mesonBool "mountfsd" withMountfsd)
+  ]
+  ++ lib.optionals (withLibBPF && vmlinux-btf != null) [
+    (lib.mesonOption "vmlinux-h" "provided")
+    (lib.mesonOption "vmlinux-h-path" "${vmlinux-btf}/vmlinux.h")
+  ]
   ++ lib.optionals withVConsole [
     (lib.mesonOption "loadkeys-path" "${kbd}/bin/loadkeys")
     (lib.mesonOption "setfont-path" "${kbd}/bin/setfont")
@@ -718,6 +730,8 @@ stdenv.mkDerivation (finalAttrs: {
       withLogind
       withMachined
       withNetworkd
+      withNsresourced
+      withMountfsd
       withNspawn
       withRepart
       withPortabled
@@ -812,6 +826,7 @@ stdenv.mkDerivation (finalAttrs: {
           systemd
           systemd-analyze
           systemd-bpf
+          systemd-nsresourced-mountfsd
           systemd-confinement
           systemd-coredump
           systemd-cryptenroll
